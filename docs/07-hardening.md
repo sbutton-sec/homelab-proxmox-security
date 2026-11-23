@@ -1,43 +1,56 @@
 # 07 – Hardening Checklist
 
-Tick only what you've actually done. An honest partial list beats an inflated one; interviewers will ask about it.
+Status of each control as verified on the live system. ✅ done · ⚠️ partial / mitigated · ❌ not yet · ❓ to verify
 
-## Proxmox host
+## Proxmox VE host
 
-- [ ] Management interface reachable from LAN only (no WAN IP on host)
-- [ ] Root login with strong password + **TOTP 2FA** in Datacenter → Permissions → Two Factor
-- [ ] Non-root admin user for day-to-day use
-- [ ] SSH key authentication only (`PasswordAuthentication no`)
-- [ ] Proxmox firewall enabled at datacenter level
-- [ ] Regular `apt update && apt full-upgrade`
-- [ ] Unused services disabled
+| Control | Status | Evidence / notes |
+|---|---|---|
+| Supported version | ❌ | Running 8.4.21 – Proxmox VE 8 reached end of life Aug 2026. Upgrade to 9.x planned |
+| Hypervisor not reachable from internet | ✅ | No IP on the WAN bridge; explicit WAN block rule to the host |
+| Management UI (8006) LAN-only | ✅ | Host only has an address on the LAN-side bridge |
+| Proxmox firewall enabled | ✅ | `pve-firewall status`: enabled/running |
+| Two-factor authentication | ❌ | No TFA entries configured |
+| Non-root admin account | ⚠️ | Separate `@pve` admin user exists; root@pam still enabled |
+| SSH key-only, no root password login | ❌ | `permitrootlogin yes`, `passwordauthentication yes` |
+| Unneeded services disabled | ⚠️ | rpcbind (NFS) listening – not required |
+| Updates applied | ❌ | 16 pending |
 
 ## OPNsense
 
-- [ ] Default-deny on WAN, no port forwards except WireGuard
-- [ ] GUI on HTTPS, LAN interface only
-- [ ] Admin TOTP enabled
-- [ ] SSH disabled or key-only from LAN
-- [ ] Anti-lockout rule reviewed
-- [ ] Config backup before every change
-- [ ] Firmware kept current
+| Control | Status | Evidence / notes |
+|---|---|---|
+| Default deny inbound on WAN | ✅ | Only UDP 51820 (WireGuard) permitted |
+| No port forwards | ✅ | No `rdr` rules active |
+| Web GUI + SSH bound to LAN only | ✅ | `sockstat`: listening on LAN address and localhost only |
+| SSH disabled when not in use | ✅ | Enabled per session, disabled at logout |
+| SSH key-only, no root password login | ❌ | Root + password allowed while enabled |
+| Brute-force protection | ✅ | `sshlockout` / `virusprot` tables active |
+| Threat-intel blocking | ✅ | CrowdSec (in + out), Wazuh active response, `MaliciousIPs`, GeoIP |
+| Bogon / private-range blocking on WAN | ✅ | Enabled |
+| Firmware current | ✅ | 26.7.9 |
+| Config backups | ✅ | 12 versions kept; used for a successful rollback |
 
-## Pi-hole VM
+## Pi-hole / Unbound VM
 
-- [ ] Admin password set
-- [ ] OS auto security updates (`unattended-upgrades`)
-- [ ] SSH key-only
-- [ ] Only ports 53 (and web admin from LAN) reachable
+| Control | Status | Evidence / notes |
+|---|---|---|
+| Unbound bound to localhost only | ✅ | `127.0.0.1:5335` |
+| DNSSEC validation | ✅ | Tested with dnssec.works (see 05) |
+
 
 ## VPN
 
-- [ ] One WireGuard key pair per device
-- [ ] AllowedIPs restricted per peer
-- [ ] Private keys never leave the device / never committed
+| Control | Status | Evidence / notes |
+|---|---|---|
+| One key pair per device | ✅ | 3 peers |
+| Remote peers limited to approved hosts | ✅ | Intended via `WireGuardAllowedHosts`
+| Private keys never committed | ✅ | `.gitignore` + manual review |
 
-## Verification
+## Monitoring
 
-- [ ] External port scan of WAN IP (e.g. `nmap` from outside) shows nothing open except — and silently — WireGuard
-- [ ] Internal `nmap` of LAN to confirm only expected services are listening
-
-TODO: add redacted nmap output.
+| Control | Status | Evidence / notes |
+|---|---|---|
+| Central SIEM | ✅ | Wazuh (VM 100) |
+| Hosts reporting to SIEM | ✅ | OPNsense  |
+| Automated response | ✅ | Wazuh active response feeds an OPNsense block table |
