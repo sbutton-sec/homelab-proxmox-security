@@ -2,13 +2,13 @@
 
 ## Version
 
-- Proxmox VE: TODO (e.g. 9.x)
+- Proxmox VE: 8.4.21
 - Install type: bare metal from ISO
 
 ## Installation steps
 
-1. Enabled virtualisation (VT-x/AMD-V) and IOMMU (VT-d/AMD-Vi) in BIOS.
-2. Installed Proxmox VE from USB, set a static management IP on the LAN.
+1. Enabled virtualisation (VT-x) in BIOS.
+2. Installed Proxmox VE from USB, set a static management IP on the spare NIC.
 3. Switched from the enterprise repo to the no-subscription repo and fully updated:
    ```bash
    apt update && apt full-upgrade -y
@@ -20,10 +20,10 @@
 
 | Bridge | Physical NIC | Purpose |
 |---|---|---|
-| `vmbr0` | TODO (e.g. `enp2s0`) | LAN – Proxmox management + LAN side of OPNsense + Pi-hole |
-| `vmbr1` | TODO (e.g. `enp1s0`) | WAN – connected only to OPNsense, no host IP |
+| `vmbr0` | `enp2s0` | VM Control – Proxmox management interface; OPNsense net0 |
+| `vmbr1` | `enp4s0` | LAN – OPNsense net1, connects to the switch / AP |
+| `vmbr2` | `enp7s0` | WAN – OPNsense net2 only; the host has no IP on this bridge, so Proxmox is never exposed to the internet |
 
-Key point: **`vmbr1` (WAN) has no IP address on the Proxmox host**, so the hypervisor itself is never exposed directly to the internet. Only the OPNsense VM sits on that bridge.
 
 Example `/etc/network/interfaces` (sanitised): [`configs/proxmox/interfaces.example`](../configs/proxmox/interfaces.example)
 
@@ -31,15 +31,8 @@ Example `/etc/network/interfaces` (sanitised): [`configs/proxmox/interfaces.exam
 
 | VM ID | Name | OS | vCPU | RAM | Disk | NICs |
 |---|---|---|---|---|---|---|
-| TODO | opnsense | OPNsense 26.7 | TODO | TODO | TODO | vmbr1 (WAN), vmbr0 (LAN) |
-| TODO | pihole | TODO (e.g. Debian 12) | TODO | TODO | TODO | vmbr0 |
+| 100 | opnsense | OPNsense 26.7 | 3 Cores  | 7GB | 20GB | vmbr1 (WAN), vmbr0 (LAN) |
+| 101 | pihole | Ubuntu | 1 Core | 1GB| 20GB | vmbr0 |
+|102 | Wazuh SIEM | Ubuntu | 4 Cores | 8GB | 80GB | vmbr1 (WAN)
 
-VM settings worth noting:
 
-- **OPNsense starts first** (`Start at boot` + boot order 1) so the network is up before other guests.
-- VirtIO NICs and disks for performance.
-- QEMU guest agent enabled where supported.
-
-## Screenshots
-
-TODO: add `screenshots/proxmox-summary.png` (redacted).
