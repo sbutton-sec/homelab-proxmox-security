@@ -1,25 +1,25 @@
 # 01 – Hardware
 
-> TODO: fill in your actual parts. Recruiters like to see *why* you chose something, not just the list.
+I repurposed the components from my old gaming PC. Reusing hardware kept the cost down, and the platform supports the virtualisation features Proxmox needs.
+
+## Parts
 
 | Part | Model | Notes / why |
 |---|---|---|
-| CPU | TODO | e.g. must support VT-x/AMD-V and VT-d/AMD-Vi (IOMMU) for passthrough |
-| RAM | TODO GB | sizing: OPNsense ~2–4 GB, Pi-hole ~1 GB, headroom for future VMs |
-| Boot/VM storage | TODO | e.g. SSD/NVMe; ZFS or LVM-thin |
-| NICs | TODO | how many ports; which is WAN, which is LAN |
-| Case / PSU | TODO | |
-| Power | TODO | e.g. on backup power / inverter so the network survives load-shedding |
+| CPU | Intel Core i7 (6th gen, Skylake), overclocked to a stable 4.5 GHz | Supports VT-x and VT-d (IOMMU), required for Proxmox virtualisation and PCIe/NIC passthrough |
+| Motherboard | ASUS Maximus VIII Hero (Z170) | VT-d support in BIOS; spare PCIe slots for additional network cards |
+| RAM | 16 GB DDR4 | Enough for OPNsense (~2–4 GB) and Pi-hole (~1 GB), with headroom for future VMs |
+| Storage | 512 GB SSD | Proxmox boot drive and VM storage. ZFS |
+| NICs | 3 × 1 Gbps | Physical WAN/LAN separation for the virtual firewall, plus one spare port for management. 
+| Power | 550W Modular PSU | on backup power / inverter so the network survives load-shedding |
 
 ## Physical topology
 
 ```
-ISP ONT ── [NIC 1: WAN] Proxmox host [NIC 2: LAN] ── Switch / AP ── clients
+ISP ONT ── [NIC 1: WAN] Proxmox host [NIC 2: LAN] ── Switch / AP ── clients [NIC 3: Managment]
 ```
-
-TODO: confirm NIC mapping and add a photo of the build to `screenshots/`.
 
 ## Design considerations
 
-- **Two physical NICs minimum** so WAN and LAN are physically separated before they reach the firewall VM.
-- **Power resilience:** TODO — note if the host runs on an inverter/UPS and how it handles outages.
+- Three physical NICs minimum so WAN and LAN are physically separated before they reach the firewall VM. Backup NIC for fail safe management. 
+- Power Resiliance to LoadSheeding / Outages via Battery Backup.
