@@ -90,6 +90,3 @@ Publishing a homelab without leaking it is part of the exercise.
 
 Next up: VLAN segmentation (IoT / trusted / management), routing WireGuard remote clients out through Proton VPN, centralised logging and an IDS (Suricata). Full list in [10-roadmap](docs/10-roadmap.md).
 
-## Certifications
-
-CompTIA A+ · CompTIA Network+ · CompTIA Security+
