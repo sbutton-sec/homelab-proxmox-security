@@ -1,0 +1,14 @@
+# Never commit secrets or raw exports
+*.xml
+!*.sanitised.xml
+*.conf
+!*.conf.example
+*.key
+*.pem
+*.backup
+*.tar.gz
+*.zst
+pihole-teleporter*
+wg*.conf
+.env
+.DS_Store

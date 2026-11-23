@@ -1,0 +1,31 @@
+# /etc/unbound/unbound.conf.d/pi-hole.conf  (example based on the Pi-hole docs)
+server:
+    verbosity: 0
+    interface: 127.0.0.1
+    port: 5335
+    do-ip4: yes
+    do-udp: yes
+    do-tcp: yes
+    do-ip6: no
+    prefer-ip6: no
+
+    # Security / privacy
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    use-caps-for-id: no
+    qname-minimisation: yes
+    hide-identity: yes
+    hide-version: yes
+
+    edns-buffer-size: 1232
+    prefetch: yes
+    num-threads: 1
+    so-rcvbuf: 1m
+
+    # Never return private addresses for public names (DNS rebinding protection)
+    private-address: 192.168.0.0/16
+    private-address: 169.254.0.0/16
+    private-address: 172.16.0.0/12
+    private-address: 10.0.0.0/8
+    private-address: fd00::/8
+    private-address: fe80::/10
