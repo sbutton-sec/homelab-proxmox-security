@@ -1,23 +1,36 @@
-# /etc/network/interfaces  (SANITISED EXAMPLE – replace NIC names and IPs with your own)
+# /etc/network/interfaces  (sanitised – matches the live layout)
 
 auto lo
 iface lo inet loopback
 
-iface enp1s0 inet manual
 iface enp2s0 inet manual
+#Management
 
-# LAN bridge – Proxmox management lives here
+iface enp4s0 inet manual
+#LAN
+
+iface enp7s0 inet manual
+#WAN
+
+# Management bridge – Proxmox host address lives here
 auto vmbr0
 iface vmbr0 inet static
-    address 10.66.66.10/24
-    gateway 10.66.66.1
-    bridge-ports enp2s0
-    bridge-stp off
-    bridge-fd 0
+        address 10.66.66.22/24
+        gateway 10.66.66.1
+        bridge-ports enp2s0
+        bridge-stp off
+        bridge-fd 0
 
-# WAN bridge – NO IP on the host; only the OPNsense VM attaches here
+# LAN bridge – no host IP; OPNsense LAN + LAN-side VMs
 auto vmbr1
 iface vmbr1 inet manual
-    bridge-ports enp1s0
-    bridge-stp off
-    bridge-fd 0
+        bridge-ports enp4s0
+        bridge-stp off
+        bridge-fd 0
+
+# WAN bridge – NO IP on the host; only the OPNsense VM attaches here
+auto vmbr2
+iface vmbr2 inet manual
+        bridge-ports enp7s0
+        bridge-stp off
+        bridge-fd 0
