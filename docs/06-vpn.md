@@ -1,53 +1,74 @@
 # 06 – VPN: Proton VPN Egress & WireGuard Remote Access
 
-Two separate VPNs with two different jobs:
+Two VPNs with two different jobs:
 
-| VPN | Direction | Purpose |
-|---|---|---|
-| Proton VPN (WireGuard client on OPNsense) | outbound | hide LAN traffic and DNS from the ISP |
-| HomeWireGuard (WireGuard server on OPNsense) | inbound | let my own devices securely reach the home network from anywhere |
+| VPN | Direction | Purpose | Status |
+|---|---|---|---|
+| HomeWireGuard (WireGuard server on OPNsense) | inbound | secure access to the home network from anywhere | ✅ in use |
+| Proton VPN (WireGuard client on OPNsense) | outbound | hide LAN traffic and DNS from the ISP | ⏸ built, rolled back |
 
 ---
 
-## Part A – Routing all LAN traffic through Proton VPN
+## Part A – HomeWireGuard remote access
 
-### Steps
+### Configuration
 
-1. Generated a WireGuard config in the Proton VPN account dashboard.
-2. In OPNsense, created a WireGuard **instance** (local) and **peer** (Proton endpoint) from that config.
-3. Assigned the tunnel as an interface and created a **gateway** for it.
-4. Added a LAN firewall rule that sets the gateway to the Proton VPN gateway (policy-based routing).
-5. Added an **outbound NAT** rule for the LAN subnet on the Proton VPN interface.
-6. Made sure Pi-hole/Unbound traffic also leaves through the tunnel, so DNS doesn't leak to the ISP.
+| Item | Value |
+|---|---|
+| Interface | `wg0` on OPNsense |
+| Tunnel network | 10.10.10.0/24 – server 10.10.10.1, one /32 per peer |
+| Listen port | UDP 51820 (the only port open on WAN) |
+| Peers | 3 – one key pair per device |
+| Client DNS | TODO: 10.66.66.50 (Pi-hole)? |
+| Client AllowedIPs | TODO: full tunnel (0.0.0.0/0) or split? |
 
-### Kill switch (fail closed)
+### Why WireGuard
 
-TODO: describe how you stop traffic leaking via WAN if the tunnel drops. Common OPNsense approach:
-- Tag LAN traffic on the policy-routing rule, and add a floating rule blocking tagged traffic on WAN, **or**
-- Disable "Skip rules when gateway is down" behaviour so rules with a down gateway don't fall back to the default route.
+- **Small attack surface:** WireGuard doesn't respond to packets that aren't signed by a known peer key, so to an internet scanner the port looks closed.
+- **Modern cryptography** (Curve25519, ChaCha20-Poly1305) with no cipher negotiation to misconfigure.
+- **Per-device keys:** a lost or stolen device is cut off by deleting its peer; no shared password to rotate.
+
+### Firewall and NAT
+
+| Layer | Rule | Purpose |
+|---|---|---|
+| WAN | Pass UDP 51820 to WAN address | Allow tunnel handshakes |
+| `wg0` | Pass WG network → `WireGuardAllowedHosts` | Peers reach only approved internal hosts (TODO: list) |
+| `wg0` | Pass WG network → not `PrivateNetworks` | Peers can use the internet through home |
+| Outbound NAT | WG network → WAN address | Peer internet traffic leaves via the home connection |
+
+Design intent: **least privilege** – a remote device can browse the internet through home and reach only specific LAN services, not the whole network.
 
 ### Verification
 
-- `https://ipleak.net` / `dnsleaktest.com` from a LAN client shows a Proton IP and no ISP DNS servers.
-- Took the tunnel down and confirmed clients lost internet instead of falling back to WAN. (TODO: confirm once kill switch is in place.)
-
-Status: ✅ working (Nov 2026).
+- Port scan of the WAN address from outside: UDP 51820 shows `open|filtered` (no response) – indistinguishable from closed.
+- Peer connected on mobile data: TODO (e.g. can reach Pi-hole admin, public IP shows home connection).
 
 ---
 
-## Part B – HomeWireGuard remote access
+## Part B – Proton VPN egress (rolled back)
 
-- WireGuard server instance on OPNsense, one peer per device (phone, laptop).
-- Single UDP port open on WAN; WireGuard doesn't respond to unauthenticated packets, so the port looks closed to scanners.
-- Remote peers get DNS = Pi-hole, so I get ad-blocking on mobile data too.
-- Lost device → delete that peer; nothing else changes.
+### Goal
+Route all LAN traffic, including Unbound's DNS lookups, through Proton VPN so the ISP sees only encrypted tunnel traffic.
 
-### Next step
+### What was built
+1. Generated a WireGuard config in the Proton VPN dashboard.
+2. Created a WireGuard instance (local) and peer (Proton endpoint) in OPNsense.
+3. Assigned the tunnel as an interface and created a gateway for it.
+4. LAN firewall rule with the Proton gateway set (policy-based routing).
+5. Outbound NAT rule for the LAN subnet on the Proton interface.
+6. Verified with ipleak.net / dnsleaktest.com: Proton IP shown, no ISP DNS servers.
 
-Route remote WireGuard clients **out through Proton VPN** as well, so a phone on public Wi-Fi gets the same privacy as the LAN. Status: 🚧 in progress.
+### Why it was rolled back
+Work machinces were unable to access resources, when I have time I will add them to an exclusion rule. 
 
----
+### How it was rolled back
+Restored a previous OPNsense configuration backup from *System → Configuration → History*, returning the firewall to a known-good state in one step. Confirmed afterwards that no Proton interface, gateway or NAT rule remained.
 
-## Problems hit
+### If re-enabled
+- Add a **kill switch**: tag policy-routed LAN traffic and block tagged traffic on WAN, so a dropped tunnel fails closed instead of leaking to the ISP.
+- Decide whether WireGuard peers should also exit through Proton.
 
-See [09-lessons-learned](09-lessons-learned.md).
+
+
+
