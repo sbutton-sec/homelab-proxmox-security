@@ -1,10 +1,10 @@
 # Homelab: Proxmox Virtualisation & Network Security Build
 
-A self-built home lab running on **Proxmox VE**, with a virtualised **OPNsense** firewall, **Pi-hole + Unbound** for private, filtered DNS, **Proton VPN** as the egress path for LAN traffic, and a **WireGuard** server for secure remote access.
+A home lab running on **Proxmox VE** on repurposed hardware, with a virtualised **OPNsense** firewall, **Pi-hole + Unbound** for filtered, DNSSEC-validated DNS, **WireGuard** for remote access, and a **Wazuh SIEM** with automated response.
 
-I built this to get hands-on practice with the things I studied for CompTIA A+, Network+ and Security+: segmentation, firewalling, DNS security, VPNs, hardening and documenting a system so someone else could run it.
+The lab was built about three years ago. In November 2026 I audited it from the live system (`pfctl`, `ss`, `sockstat`, Proxmox CLI) and documented it here, including the weaknesses the audit found and the plan to fix them.
 
-> All IP addresses, hostnames and keys in this repository are sanitised or examples. No secrets are committed. See [Sanitisation](#sanitisation).
+> All addresses are private (RFC 1918) or examples. No keys, credentials or public IPs are published. See [Sanitisation](#sanitisation).
 
 ---
 
@@ -12,81 +12,72 @@ I built this to get hands-on practice with the things I studied for CompTIA A+, 
 
 ```mermaid
 flowchart LR
-    ISP[(ISP<br/>Fibre / PPPoE)] --> WAN
+    ISP[(ISP<br/>PPPoE)] --> WAN
 
     subgraph PVE[Proxmox VE host]
         direction LR
         subgraph FW[OPNsense VM]
             WAN[WAN<br/>PPPoE]
             LAN[LAN]
-            WG[WireGuard<br/>HomeWireGuard]
-            PVPN[Proton VPN<br/>WireGuard tunnel]
+            WG[WireGuard<br/>remote access]
+            CS[CrowdSec<br/>GeoIP blocking]
         end
-        PH[Pi-hole + Unbound VM<br/>10.66.66.50]
+        PH[Pi-hole + Unbound VM]
+        WZ[Wazuh SIEM VM]
     end
 
     LAN --- SW[Switch / Wi-Fi AP]
     SW --- CL[LAN clients]
     CL -- DNS --> PH
-    PH -- recursive DNS --> PVPN
-    CL -- internet traffic --> PVPN
-    PVPN -- encrypted --> WAN
-    RM[Remote devices] -- WireGuard --> WAN --> WG --> LAN
+    PH -- recursive, DNSSEC --> WAN
+    FW -- logs --> WZ
+    WZ -- active response<br/>block IPs --> FW
+    RM[Remote devices] -- WireGuard UDP --> WAN --> WG --> LAN
 ```
-
-**Traffic flow in one sentence:** clients send DNS to Pi-hole (ad/malware filtering, then recursive resolution through Unbound), and all LAN internet traffic is policy-routed by OPNsense out through a Proton VPN tunnel, so the ISP sees only encrypted VPN traffic.
 
 ## What's in the lab
 
 | Component | Role | Docs |
 |---|---|---|
-| Proxmox VE | Type-1 hypervisor hosting all VMs | [02-proxmox-setup](docs/02-proxmox-setup.md) |
-| OPNsense 26.7 | Firewall, router, PPPoE, VPN gateway | [04-opnsense-firewall](docs/04-opnsense-firewall.md) |
-| Pi-hole + Unbound | Network-wide DNS filtering + recursive resolver | [05-dns-pihole-unbound](docs/05-dns-pihole-unbound.md) |
-| Proton VPN (WireGuard) | Encrypted egress for all LAN traffic | [06-vpn](docs/06-vpn.md) |
-| WireGuard server | Remote access back into the home network | [06-vpn](docs/06-vpn.md) |
+| Proxmox VE 8.4 | Type-1 hypervisor on repurposed gaming PC | [01](docs/01-hardware.md), [02](docs/02-proxmox-setup.md) |
+| OPNsense 26.7 | Firewall, router, PPPoE, WireGuard server | [04](docs/04-opnsense-firewall.md) |
+| CrowdSec, GeoIP, threat-intel aliases | Inbound and outbound blocking of known-bad IPs | [04](docs/04-opnsense-firewall.md) |
+| Pi-hole v6 + Unbound | Network-wide DNS filtering, recursive DNSSEC resolver | [05](docs/05-dns-pihole-unbound.md) |
+| WireGuard | Remote access – the only service open to the internet | [06](docs/06-vpn.md) |
+| Wazuh | SIEM, alerting, active response into the firewall | [04](docs/04-opnsense-firewall.md), [07](docs/07-hardening.md) |
 
 ## Skills demonstrated
 
-- **Virtualisation:** Proxmox install, VM provisioning, virtual bridges, NIC passthrough / bridging for a virtual firewall
-- **Network engineering:** PPPoE WAN, IP addressing, DHCP, gateway groups, policy-based routing
-- **Network security:** default-deny firewall rules, DNS leak prevention, VPN kill-switch behaviour, least-exposure remote access
-- **DNS security:** filtering with Pi-hole, recursive resolution with Unbound (no third-party resolver sees full query history)
-- **Hardening:** management-plane lockdown, SSH keys, MFA, update process — see [07-hardening](docs/07-hardening.md)
-- **Troubleshooting & documentation:** real problems I hit and how I fixed them — see [09-lessons-learned](docs/09-lessons-learned.md)
+- **Virtualisation:** Proxmox install, VM provisioning, Linux bridges, virtual firewall with physically separated WAN/LAN
+- **Network engineering:** PPPoE WAN, addressing, NAT, policy-based routing (Proton VPN egress, built and rolled back)
+- **Network security:** default-deny firewalling, threat-intel blocking, least-privilege remote access
+- **DNS security:** blocklist filtering, recursive resolution, DNSSEC validation, DNS rebinding protection
+- **Security monitoring:** Wazuh SIEM with automated blocking
+- **Auditing:** reviewing a live ruleset and configs, finding misconfigurations, prioritising fixes – see [09](docs/09-lessons-learned.md) and [10](docs/10-roadmap.md)
+- **Change management:** versioned firewall config and a clean rollback of a failed change
 
-## Repository layout
+## Documentation
 
-```
-.
-├── README.md
-├── docs/
-│   ├── 01-hardware.md
-│   ├── 02-proxmox-setup.md
-│   ├── 03-network-design.md
-│   ├── 04-opnsense-firewall.md
-│   ├── 05-dns-pihole-unbound.md
-│   ├── 06-vpn.md
-│   ├── 07-hardening.md
-│   ├── 08-backup-recovery.md
-│   ├── 09-lessons-learned.md
-│   └── 10-roadmap.md
-├── configs/          # sanitised example configs
-├── diagrams/         # exported network diagrams
-└── screenshots/      # redacted screenshots of dashboards/rules
-```
+| # | Doc |
+|---|---|
+| 01 | [Hardware](docs/01-hardware.md) |
+| 02 | [Proxmox setup](docs/02-proxmox-setup.md) |
+| 03 | [Network design](docs/03-network-design.md) |
+| 04 | [OPNsense firewall](docs/04-opnsense-firewall.md) |
+| 05 | [DNS: Pi-hole + Unbound](docs/05-dns-pihole-unbound.md) |
+| 06 | [VPN](docs/06-vpn.md) |
+| 07 | [Hardening checklist](docs/07-hardening.md) |
+| 08 | [Backup & recovery](docs/08-backup-recovery.md) |
+| 09 | [Lessons learned](docs/09-lessons-learned.md) |
+| 10 | [Roadmap](docs/10-roadmap.md) |
 
 ## Sanitisation
 
-Before anything is committed:
-
-- Public IPs, PPPoE credentials, VPN private keys and pre-shared keys are removed.
+- Public IPs, PPPoE credentials, VPN keys and account details are never committed.
 - Config exports are scrubbed with [`configs/sanitise.sh`](configs/sanitise.sh) and checked by hand.
-- Screenshots are cropped/blurred to remove MAC addresses, public IPs and device names.
+- Screenshots are cropped or blurred to remove MAC addresses, public IPs and email addresses.
+- Personal allow/deny-list entries are summarised by category, not published.
 
-Publishing a homelab without leaking it is part of the exercise.
+## Certifications
 
-## Roadmap
-
-Next up: VLAN segmentation (IoT / trusted / management), routing WireGuard remote clients out through Proton VPN, centralised logging and an IDS (Suricata). Full list in [10-roadmap](docs/10-roadmap.md).
-
+CompTIA A+ · CompTIA Network+ · CompTIA Security+
