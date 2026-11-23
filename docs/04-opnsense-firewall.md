@@ -2,50 +2,91 @@
 
 ## Version
 
-OPNsense 26.7.x, running as a VM on Proxmox.
+OPNsense **26.7.9** (amd64), running as VM 101 (`opnrouter`) on Proxmox.
 
-## WAN – PPPoE
+## Interfaces
 
-- WAN interface on `vmbr1`, type **PPPoE**.
-- Credentials from the ISP (not stored in this repo).
-- TODO: MTU/MSS values if you had to tune them (common with PPPoE: MTU 1492).
+| Interface | Device | Role |
+|---|---|---|
+| WAN | `pppoe1` over `vtnet2` | PPPoE to ISP |
+| LAN | `vtnet1` | 10.66.66.0/24, gateway 10.66.66.1 |
+| WireGuard | `wg0` | 10.10.10.0/24, remote-access tunnel |
 
-## LAN
+## Services running on the firewall
 
-- Static IP on `vmbr0`.
-- DHCP server enabled; **DNS server option set to the Pi-hole (10.66.66.50)** so all clients use filtered DNS automatically.
+| Service | Listening on | Purpose |
+|---|---|---|
+| Web GUI (lighttpd) | LAN (10.66.66.1) + localhost only | Management – **not reachable from WAN** |
+| SSH | LAN (10.66.66.1) + localhost only | Management – **not reachable from WAN** |
+| DHCP (ISC dhcpd) | LAN | Address assignment |
+| WireGuard | UDP 51820 | Remote access, 3 peers |
+| CrowdSec | localhost | Community threat intelligence; blocklists enforced in and out |
+| ClamAV | localhost | Antivirus engine |
+| NetFlow (Insight) | localhost | Traffic flow reporting |
+| NTP | all interfaces | Time sync (WAN access blocked by firewall) |
 
-## Firewall rules (LAN)
+## Defence layers (in processing order)
 
-Rules are processed top-down; first match wins.
+1. **Built-in protections**
+   - Anti-spoofing: traffic claiming to be from a local subnet is dropped unless it arrives on that subnet's interface.
+   - **Block bogon and private networks on WAN** (RFC 1918, CGNAT 100.64.0.0/10, link-local).
+   - Brute-force lockout tables for SSH and the web GUI (`sshlockout`, `virusprot`).
+2. **Threat-intelligence blocking**
+   - **CrowdSec** blocklists – blocked both inbound *and* outbound (stops infected hosts calling out).
+   - **Wazuh active response** – the Wazuh SIEM can push offending IPs into a firewall block table automatically.
+   - Custom `MaliciousIPs` alias blocked on all interfaces.
+3. **Interface rules** (below).
 
-| # | Action | Source | Destination | Port | Gateway | Purpose |
-|---|---|---|---|---|---|---|
-| 1 | Pass | LAN net | Pi-hole | 53 | default | allow DNS to Pi-hole |
-| 2 | Block | LAN net | any | 53, 853 | — | TODO: stop DNS bypass |
-| 3 | Pass | LAN net | LAN net | any | default | local traffic |
-| 4 | Pass | LAN net | any | any | **Proton VPN gateway** | policy-route internet out via VPN |
-| — | (implicit) Block | any | any | any | — | default deny |
+## WAN rules (`pppoe1`)
 
-> TODO: export your real rules (redacted) and replace this table, or add a screenshot.
-
-## WAN rules
-
-| Action | Protocol | Destination | Port | Purpose |
+| Action | Source | Destination | Port | Purpose |
 |---|---|---|---|---|
-| Pass | UDP | WAN address | TODO (WireGuard port) | HomeWireGuard remote access |
+| Pass | any | WAN address | UDP 51820 | WireGuard remote access |
+| Pass | `Cloudflare_IPs` | LAN | TCP 80/443 | Web server reachable only via Cloudflare proxy (inactive – no port forward, VM stopped) |
+| Block | any | web server | TCP 80/443 | Direct access to web server blocked for non-Cloudflare sources |
+| Block | any | WAN address | any | Explicit default deny (logged) |
+| Block | any | WAN address | ICMP | No ping response – host invisible to ping sweeps |
+| Block | any | Proxmox host | any | Hypervisor never reachable from WAN |
+| Block | `MaliciousIPs` | any | any | Known-bad IPs |
+| Block | GeoIP: USA, UK, Germany, France, Russia, China, Iran, Seychelles | any | any | Country-level blocking (logged) |
 
-Everything else inbound is dropped by default. No port forwards.
+No port forwards are active.
 
-## Outbound NAT
+## LAN rules (`vtnet1`)
 
-Set to **Hybrid/Manual** so traffic from the LAN subnet is NATed out the Proton VPN interface, not just the WAN.
+| Action | Source | Destination | Port | Purpose |
+|---|---|---|---|---|
+| Pass | LAN net | any | TCP/UDP 80 | HTTP |
+| Pass | LAN net | any | TCP 22 | SSH |
+| Pass | LAN net | Pi-hole | UDP 3000 | TODO: purpose |
+| Pass | LAN net | any | any | General outbound |
+| Block | any | any | any | Default deny (anything not from LAN net) |
 
-## System settings
+## WireGuard rules
 
-- Web GUI on HTTPS only, listening on LAN only.
-- TODO: SSH disabled, or key-only from LAN.
-- TODO: MFA (TOTP) enabled on the admin account.
-- Firmware updated through *System → Firmware*; changelog read before major upgrades.
+| Scope | Action | Source | Destination | Purpose |
+|---|---|---|---|---|
+| WireGuard group | Pass | any | any | Allow tunnel traffic |
+| `wg0` | Pass | WG network | `WireGuardAllowedHosts` | Peers reach only approved internal hosts |
+| `wg0` | Pass | WG network | not `PrivateNetworks` | Peers can use the internet through home |
 
-Sanitised config notes: [`configs/opnsense/`](../configs/opnsense/)
+## NAT
+
+- **Outbound:** hybrid – automatic rules for LAN, WireGuard and the firewall itself, plus manual rules for the WireGuard network. TODO: confirm under Firewall → NAT → Outbound.
+- **Port forwards:** none.
+
+## Management access
+
+- Web GUI and SSH bound to the **LAN interface only** – neither is reachable from WAN.
+- **SSH is enabled only when needed** and disabled from the web GUI at the end of each session, so the service isn't listening most of the time.
+- While enabled: port 22, root login and password authentication allowed, with brute-force lockout (`sshlockout`) active.
+- MFA: TODO
+- configuration backups kept on the firewall; used to roll back the Proton VPN change (see [06-vpn](06-vpn.md)).
+
+| # | Finding | Risk | Fix | Status |
+|---|---|---|---|---|
+| 1 | WireGuard **group** rule passes all traffic. Group rules are evaluated before `wg0` rules, so the least-privilege `WireGuardAllowedHosts` rule never takes effect. | A compromised remote device has full LAN access | Disable the group pass-all rule; keep the `wg0` rules | ⬜ |
+| 2 | GeoIP block rules sit below the WireGuard pass rule. | GeoIP doesn't restrict who can reach WireGuard | Move GeoIP blocks above the WireGuard rule (or to Floating) | ⬜ |
+| 3 | No rule forces DNS through Pi-hole. | Devices with hard-coded DNS bypass filtering | NAT redirect port 53 to Pi-hole; block outbound 53/853 | ⬜ |
+| 4 | LAN HTTP/SSH rules are redundant (shadowed by "LAN → any"). | None – housekeeping | Remove, or replace allow-any with specific rules | ⬜ |
+| 5 | Cloudflare WAN rules remain with no port forward. | None while inactive | Remove, or document as disabled until the web server returns | ⬜ |
