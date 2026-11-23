@@ -2,43 +2,65 @@
 
 ## Why
 
-- **Pi-hole** blocks ads, trackers and known-malicious domains for every device on the network, including ones where you can't install an ad blocker (TVs, IoT).
-- **Unbound** acts as a local **recursive resolver**: instead of sending every query to Google/Cloudflare, it asks the root servers and authoritative servers directly. No single upstream provider has my complete DNS history.
+- **Pi-hole** blocks ads, trackers, malware, phishing and ransomware domains for every device on the network, including ones where you can't install a blocker (TVs, IoT).
+- **Unbound** is a local **recursive, DNSSEC-validating resolver**: instead of sending every query to Google or Cloudflare, it queries the root, TLD and authoritative servers directly. No single upstream provider sees my full DNS history, and forged (spoofed) DNS answers are rejected.
 
 ## Setup
 
 | Item | Value |
 |---|---|
-| VM OS | TODO |
-| Pi-hole IP | 10.66.66.50 |
-| Unbound | same VM, listening on `127.0.0.1#5335` |
-| Pi-hole upstream | `127.0.0.1#5335` only (all public upstreams unticked) |
+| Pi-hole | v6 (Core 6.5, Web 6.6.1, FTL 6.8), IP 10.66.66.50 |
+| Pi-hole listens on | port 53 (DNS), 80/443 (admin web UI) |
+| Unbound | same VM, **127.0.0.1:5335 only** – not reachable from the network |
+| Pi-hole upstream | `127.0.0.1#5335` |
 
 Query path:
 
-```
-client → Pi-hole (:53) → Unbound (127.0.0.1:5335) → root / TLD / authoritative servers
-                                                     (leaves via Proton VPN tunnel)
-```
+    client → Pi-hole :53 → (blocked? return 0.0.0.0) → Unbound 127.0.0.1:5335 → root → TLD → authoritative
 
-Example Unbound config: [`configs/pihole/unbound-pi-hole.conf.example`](../configs/pihole/unbound-pi-hole.conf.example)
+Clients receive 10.66.66.50 as their only DNS server.
+
+## Unbound hardening
+
+| Setting | Effect |
+|---|---|
+| `interface: 127.0.0.1` | Only Pi-hole can query Unbound |
+| `auto-trust-anchor-file` | DNSSEC validation using the root trust anchor |
+| `harden-dnssec-stripped: yes` | Rejects answers where DNSSEC data was stripped (downgrade attack) |
+| `harden-glue: yes` | Ignores out-of-zone glue records (cache poisoning) |
+| `private-address: …` | Public names may not resolve to private IPs (DNS rebinding protection) |
+| `edns-buffer-size: 1232` | Avoids IP fragmentation (DNS Flag Day 2020 recommendation) |
+| `prefetch: yes` | Refreshes popular records before they expire |
 
 ## Validation
 
-```bash
-# Unbound resolves on its own
-dig example.com @127.0.0.1 -p 5335
+    $ dig example.com @127.0.0.1 -p 5335
+    status: NOERROR   flags: qr rd ra ad      ← resolves, DNSSEC-validated (ad flag)
 
-# DNSSEC: this should FAIL (SERVFAIL)
-dig fail01.dnssec.works @127.0.0.1 -p 5335
+    $ dig fail01.dnssec.works @127.0.0.1 -p 5335
+    status: SERVFAIL                          ← deliberately broken signature is rejected
 
-# DNSSEC: this should succeed with the 'ad' flag
-dig dnssec.works @127.0.0.1 -p 5335
-```
-
-TODO: paste your actual output (redacted) here — it proves it works.
+    $ dig dnssec.works @127.0.0.1 -p 5335
+    status: NOERROR   flags: qr rd ra ad      ← valid signature accepted
 
 ## Blocklists
 
-- TODO: list the adlists you use and roughly how many domains are blocked.
-- TODO: note any domains you had to allowlist and why (shows troubleshooting).
+**15 lists, ~3.4 million unique domains**, covering:
+
+| Category | Sources |
+|---|---|
+| Ads | StevenBlack hosts, OISD Big, AdGuard Base/Mobile, anudeepND, Block List Project |
+| Tracking | AdGuard Spyware (third-party, first-party, mobile) |
+| Malware / ransomware | Block List Project – malware, ransomware |
+| Phishing / fraud | Block List Project – phishing, abuse, redirect |
+| Cryptojacking | Block List Project – crypto |
+
+## Allow and deny lists
+
+Aggressive blocklists break legitimate services, so the allowlist is maintained from the query log:
+
+- **Allowlisted (regex):** Microsoft 365 / Entra ID sign-in, Outlook, Teams, OneDrive, SharePoint and Windows Update; Google sign-in and YouTube; banking, insurance and government portals; Proton; certification exam provider.
+- **Denylisted (regex):** shopping and social apps (Temu, Shein, 9gag), vendor telemetry, and suspicious domains spotted in the query log.
+
+Full lists are not published, as they reveal which personal services are in use.
+
