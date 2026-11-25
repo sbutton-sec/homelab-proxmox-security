@@ -36,6 +36,11 @@ Evidence from the live system, captured November 2026. No public IPs, keys or ac
 ![Pi-hole dashboard](https://github.com/sbutton-sec/homelab-proxmox-security/blob/main/screenshots/Pihole%20Dashboard_clean.png)
 *Pi-hole dashboard: 13 clients, ~35,000 queries in 24 hours, 13% blocked, 3.4M domains on blocklists. Upstream is `localhost#5335` (Unbound) only.*
 
+## Remote access
+
+![WireGuard from mobile](https://github.com/sbutton-sec/homelab-proxmox-security/blob/main/screenshots/WireGuard%20From%20Mobile_clean.png)
+*WireGuard client connected over mobile data, with a /32 tunnel address. Keys, endpoint and port are redacted.*
+
 ## External exposure
 
 ![ShieldsUP external scan](https://github.com/sbutton-sec/homelab-proxmox-security/blob/main/screenshots/No%20Ports%20Open_clean.png)
